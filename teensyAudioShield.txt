@@ -1,0 +1,65 @@
+//Logarithmic mapping of float[NumLEDS] (pulled from fft.read() in this case) to float[NumLEDS] (logArrayL&R)
+//fft.read returns 0-1, replace it with a similar function. scaleArray is a map of the max possible values for each bin. Remove if your func returns full range 0-1.
+//call initLogMap() once to initialize array of log scales, should be faster than calculating log scale every time?
+
+void updatefftArrs() {  //update log scaled x-axis array with fft, scale each val by respective bin compensation
+  if (fftL.available() && fftR.available()) {
+    float logbin = 0.0; //unrounded LED position to be mapped to from linear fft.read
+    float prevbin = -2.0; //previous led position, for slope
+    float nextbin = 0.0;  //next unrounded LED position, for lerp
+    float slope = 2.0;    //calculated each while loop, start it above 1
+    int i = 0; //Master Index
+    int j = 0; //LED array index
+    while ((i < NumLEDS-1) && (j < NumLEDS-1)) { //loop through available FFT bins
+      logbin = logMap[i];
+      if(i!=0){
+      	prevbin = logMap[i-1];
+      }
+      slope = logbin - prevbin;
+      if (slope > 1) {
+        nextbin = logMap[i + 1];
+        int nextbinr = round(nextbin);
+        int logbinr = round(logbin);
+        j = logbinr;
+        float fftLVal = fftL.read(i) / scaleArray[i];
+        float fftLNext = fftL.read(i + 1) / scaleArray[i + 1];
+        float fftRVal = fftR.read(i) / scaleArray[i];
+        float fftRNext = fftR.read(i + 1) / scaleArray[i + 1];
+        while ((j < nextbinr)&&(j<NumLEDS)) {   //fill in leds between log scale bins with lerp
+          float ratio = (j - logbinr) / (nextbinr - logbinr);
+          float iratio = 1 - ratio;
+          logArrayL[j] = (fftLVal * iratio) + (fftLNext * ratio);
+          logArrayR[j] = (fftRVal * iratio) + (fftRNext * ratio);
+          j++;
+        }
+        i++;
+      } else if (slope < 1) {
+        //get bin steps between leds
+        //add up fftval/stepcount
+        int logbinr = round(logbin);
+        int steps = 0;
+        float fftLAdd = 0;
+        float fftRAdd = 0;
+        while ((logbinr == round(logMap[i + steps])) && (i + (steps+1)  < NumLEDS)) {
+          fftLAdd += fftL.read(round(i + steps)) / scaleArray[round(i + steps)];
+          fftRAdd += fftR.read(round(i + steps)) / scaleArray[round(i + steps)];
+          steps++;
+        }
+        logArrayL[logbinr] = fftLAdd / steps;
+        logArrayR[logbinr] = fftRAdd / steps;
+        i += steps;
+      } else {
+        logArrayL[i] = fftL.read(round(logbin)) / scaleArray[round(logbin)];
+        logArrayR[i] = fftR.read(round(logbin)) / scaleArray[round(logbin)];
+        i++;
+      }
+      
+    }
+  }
+}
+
+void initLogMap() { //Init logarithmic mapping array of bins to leds; logMap[0]==0, logMap[NumLEDS-1]==NumLEDS-1 for easy array access
+  for (int i = 0; i < NumLEDS-1; i++) {
+    logMap[i] = ((NumLEDS-1) * log(i + 1.0) / log(NumLEDS-1));
+  }
+}
